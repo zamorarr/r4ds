@@ -1,0 +1,210 @@
+---
+title: "Iteration Notes"
+subtitle: "R for Data Science"
+output: powerpoint_presentation
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+```
+
+## Iteration
+Iteration is useful when you want to perform the same action many times. The
+most common type of loop is called the `for` loop.
+
+## Why haven't we used loops?
+```{r no-loops-yet}
+x <- c(100, 200, 300)
+y <- 2*x
+y
+```
+
+::: notes
+We haven't used loops yet since most of the operations we've seen are already 
+*vectorized*. In the example above, we are able to quickly calculate `y` without
+iterating over every value in `x`
+:::
+
+## Other languages teach this way first
+```{r other-language-loops}
+y <- vector("double", length(x))
+
+for (i in 1:length(x)) {
+  y[i] <- 2*x[i]
+}
+
+y
+```
+
+::: notes
+Most programming books on other languages introduce loops early on. This is how
+they would have solved the previous problem. You iterate over every value in x
+and perform a computation on it (in this case, multiplying by two). The result
+of that computation is saved in the new appropriate place in the output.
+
+There are three parts to loop: 
+  1. initialize the output 
+  2. iterate over a sequence
+  3. perform a computation
+:::
+
+## For Loop: Initialize Output
+```{r init-output}
+y <- vector("double", length(x))
+
+for (i in 1:length(x)) {
+  y[i] <- 2*x[i]
+}
+```
+
+::: notes
+The first thing we do is create an empty place to store our output. This output
+will be the same length as the number of iterations we plan on doing.
+:::
+
+## Init Output 2
+`y <- vector("double", length(x))`
+
+```{r init-output2, echo=FALSE}
+df <- tibble(x = c(100, 200, 300), y = c("", "", ""))
+knitr::kable(df)
+```
+
+## For Loop: Sequence
+```{r init-sequence}
+y <- vector("double", length(x))
+
+for (i in 1:length(x)) {
+  y[i] <- 2*x[i]
+}
+```
+::: notes
+The second thing we do is define the sequence of values we will be iterating over.
+In this case, we are iterating over the values between 1 and length(x)
+:::
+
+## For Loop: Sequence 2
+```{r init-sequence2}
+for (i in 1:5) {
+  print(i)
+}
+
+for (i in 5:1) {
+  print(i)
+}
+```
+
+## For Loop: Body
+```{r init-body}
+y <- vector("double", length(x))
+
+for (i in 1:length(x)) {
+  y[i] <- 2*x[i]
+}
+```
+
+::: notes
+The final thing we do is define the body of the computation. Note we are using the
+`[` accessor to get the i-th element of `x` and `y`.
+:::
+
+## Calculate the mean of every column
+How do I calculate the mean of every column in `mtcars`?
+
+```{r quiz-1, echo=FALSE}
+knitr::kable(head(mtcars, 4))
+```
+
+## 1. Define your output
+```{r mean-output}
+n <- ncol(mtcars)
+x <- vector("double", n)
+```
+
+## 2. Define your iteration sequence
+```{r mean-sequence, eval=FALSE}
+1:ncol(mtcars)
+```
+
+## 3. Define computation body
+```{r mean-body, eval=FALSE}
+x[i] <- mean(mtcars[[i]])
+```
+
+## All together now
+```{r mean-for-loop}
+n <- ncol(mtcars)
+x <- vector("double", n)
+
+for (i in 1:n) {
+  x[i] <- mean(mtcars[[i]])
+}
+
+x
+```
+
+# For Loop Tips
+
+## Tip 1: Initialize Your Output
+You technically don't have to initialize your output. You can grow your output
+vector with each iteration. Don't do this. Be better.
+
+```{r growing-output}
+y <- NA
+
+for (i in 1:4) {
+  y[i] <- i^2
+}
+
+y
+```
+
+::: notes
+This is because R has to figure out each iteration how much more memory to allocate
+for your object. It's a lot more efficient to allocate it all at once in the beginning.
+:::
+
+## Tip 2: Use seq_* functions
+
+```{r seq-problem-along}
+x <- vector("integer", 0)
+for (i in 1:length(x)) {
+  print(i)
+}
+```
+
+```{r seq-better-along}
+x <- vector("integer", 0)
+for (i in seq_along(x)) {
+  print(i)
+}
+```
+
+```{r seq-problem-len}
+n <- 0
+for (i in 1:n) {
+  print(i)
+}
+```
+
+```{r seq-better-len}
+n <- 0
+for (i in seq_len(n)) {
+  print(i)
+}
+```
+
+# More For Loop Uses
+1. Iterating over an object and creating a new one
+2. Modifying the original object
+3. Looping over names or values
+4. Outputs of unknown length
+5. Sequences of unknown length
+
+
+
+## So, when do I use loops?
+If an iteration depends on previous iterations, you have to use a loop. However,
+many times that is not the case and you are better off using `map()` or `apply*()`
