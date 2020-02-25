@@ -1,0 +1,489 @@
+---
+title: "Model Basics"
+subtitle: "R for Data Science"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=TRUE, dpi=300)
+```
+
+```{r load-libraries}
+library(tidyverse)
+library(modelr)
+```
+
+# Introduction
+
+# A Simple Model
+
+## A Simulated Dataset
+```{r simulated-dataset}
+ggplot(sim1, aes(x, y)) + geom_point()
+```
+
+## Many Families to Choose From
+
+```{r family-choose}
+ggplot(mtcars, aes(x = disp, y = mpg)) +
+  geom_point() + 
+  geom_smooth(method = stats::lm, formula = y ~ poly(x, 1), se = FALSE) +
+  labs(title = "y = poly(x, 1)", caption = "Source: mtcars")
+
+ggplot(mtcars, aes(x = disp, y = mpg)) +
+  geom_point() + 
+  geom_smooth(method = stats::lm, formula = y ~ poly(x, 2), se = FALSE) +
+  labs(title = "y = poly(x, 2)", caption = "Source: mtcars")
+
+ggplot(mtcars, aes(x = disp, y = mpg)) +
+  geom_point() + 
+  geom_smooth(method = stats::lm, formula = y ~ poly(x, 3), se = FALSE) +
+  labs(title = "y = poly(x, 3)", caption = "Source: mtcars")
+```
+
+## Many Parameters to Choose From
+
+```{r many-params}
+models <- tibble(
+  a1 = runif(250, -20, 40),
+  a2 = runif(250, -5, 5)
+)
+
+ggplot(sim1, aes(x, y)) + 
+  geom_abline(aes(intercept = a1, slope = a2), data = models, alpha = 1/4) +
+  geom_point() +
+  labs(caption = "Source: sim1 dataset")
+```
+
+## How do we define a good fit?
+
+One way is to look at the distance from each point to the value predicted by the model. We want models that provide a small distance for all points.
+```{r define-good-fit, echo=FALSE}
+dist1 <- sim1 %>% 
+  mutate(
+    # dodge each x value by c(-0.05,0,0.05)
+    dodge = rep(c(-1, 0, 1) / 20, 10),
+    x_dodge = x + dodge,
+    pred = 7 + x_dodge * 1.5
+  )
+
+ggplot(dist1, aes(x_dodge, y)) + 
+  geom_abline(intercept = 7, slope = 1.5, colour = "grey40") +
+  geom_point(colour = "grey40") +
+  geom_linerange(aes(ymin = y, ymax = pred), colour = "#3366FF") +
+  labs(caption = "Source: sim1 dataset")
+```
+
+## Compute the Residual
+
+```{r model-define}
+model1 <- function(a, data) {
+  a[1] + data$x * a[2]
+}
+
+model1(c(7, 1.5), sim1)
+```
+
+```{r model-distance}
+measure_distance <- function(mod, data) {
+  diff <- data$y - model1(mod, data)
+  sqrt(mean(diff ^ 2))
+}
+
+measure_distance(c(7, 1.5), sim1)
+```
+
+```{r sim1-distance}
+sim1_dist <- function(a1, a2) {
+  measure_distance(c(a1, a2), sim1)
+}
+
+models <- models %>% 
+  mutate(dist = map2_dbl(a1, a2, sim1_dist))
+
+models
+```
+
+## Top 10 Models By Distance
+
+```{r model-top10}
+ggplot(sim1, aes(x, y)) + 
+  geom_point(size = 2, colour = "grey30") + 
+  geom_abline(
+    aes(intercept = a1, slope = a2, colour = -dist), 
+    data = filter(models, rank(dist) <= 10)
+  ) +
+  scale_color_viridis_c() +
+  labs(title = "Top 10 Models by Distance", caption = "Source: sim1 dataset")
+```
+
+## Plot of Distance by Params
+
+```{r distance-by-params}
+ggplot(models, aes(a1, a2)) +
+  geom_point(data = filter(models, rank(dist) <= 10), size = 4, colour = "red") +
+  geom_point(aes(colour = -dist)) +
+  scale_color_viridis_c() +
+  labs(title = "Model Distance by Parameters", caption = "Source: sim1 dataset")
+```
+
+## Grid Search of Parameters
+```{r grid-search-params}
+grid <- expand.grid(
+  a1 = seq(-5, 20, length = 25),
+  a2 = seq(1, 3, length = 25)
+) %>% 
+  mutate(dist = map2_dbl(a1, a2, sim1_dist))
+
+grid %>% 
+  ggplot(aes(a1, a2)) +
+  geom_point(data = filter(grid, rank(dist) <= 10), size = 4, colour = "red") +
+  geom_point(aes(colour = -dist)) +
+  scale_color_viridis_c() +
+  labs(title = "Model Distance by Parameters", caption = "Source: sim1 dataset")
+```
+
+## Top 10 Models from Grid Search
+
+```{r top-10-grid-search}
+ggplot(sim1, aes(x, y)) + 
+  geom_point(size = 2, colour = "grey30") + 
+  geom_abline(
+    aes(intercept = a1, slope = a2, colour = -dist), 
+    data = filter(grid, rank(dist) <= 10)
+  ) +
+  scale_color_viridis_c() +
+  labs(title = "Top 10 Models by Distance from Grid Search", caption = "Source: sim1 dataset")
+```
+
+## Grid Search Not Needed
+1. Pick a starting point and look around for the steepest slope. 
+2. Then ski down that slope a little way
+3. Repeat again and again, until you can’t go any lower. 
+
+In R, we can do that with `optim()`
+::: notes
+https://stats.stackexchange.com/a/253636
+
+Gradient descent maximizes a function using knowledge of its derivative. Newton's method, a root finding algorithm, maximizes a function using knowledge of its second derivative. That can be faster when the second derivative is known and easy to compute (the Newton-Raphson algorithm is used in logistic regression). However, the analytic expression for the second derivative is often complicated or intractable, requiring a lot of computation. Numerical methods for computing the second derivative also require a lot of computation -- if N values are required to compute the first derivative, N^2 are required for the second derivative. 
+:::
+
+## Optim Results
+```{r optim-results}
+best <- optim(c(0, 0), measure_distance, data = sim1)
+#print(best$par)
+
+ggplot(sim1, aes(x, y)) + 
+  geom_point(size = 2, colour = "grey30") + 
+  geom_abline(intercept = best$par[1], slope = best$par[2]) +
+  labs(
+    title = sprintf("Best Model: a1 = %s, a2 = %s", 
+                    round(best$par[1],2), 
+                    round(best$par[2], 2)),
+    subtitle = "optim(c(0, 0), measure_distance, data = sim1)",
+    caption = "Source: sim1 dataset")
+```
+
+## Use lm() when you can
+R has a tool specifically designed for fitting linear models called `lm()`. `lm()` has a special way to specify the model family: formulas. Formulas look like `y ~ x`, which `lm()` will translate to a function like `y = a_1 + a_2 * x`
+
+```{r lm-instead}
+sim1_mod <- lm(y ~ x, data = sim1)
+coef(sim1_mod)
+```
+
+# Visualizing Models
+
+## What do I visualize?
+You simple models you can study the coefficients to understand what patterns the model is capturing. But for more complicated models it is often more fruitful to study the predictions and residuals.
+
+## Visualizing Predictions
+1. Generate an evenly spaced grid of parameters with `modelr::data_grid()`.
+
+```{r modelr-grid}
+grid <- sim1 %>% data_grid(x)
+grid %>% knitr::kable()
+```
+
+## Visualizing Predictions
+1. Generate an evenly spaced grid of parameters with `modelr::data_grid()`.
+2. Add predictions with `modelr::add_predictions()`.
+
+```{r modelr-predictions}
+grid <- sim1 %>% 
+  data_grid(x) %>% 
+  add_predictions(sim1_mod)
+
+grid %>% knitr::kable()
+```
+
+## Visualizing Predictions
+1. Generate an evenly spaced grid of parameters with `modelr::data_grid()`.
+2. Add predictions with `modelr::add_predictions()`.
+3. Plot the predictions with ggplot2
+
+```{r modelr-plot}
+grid <- sim1 %>% 
+  data_grid(x) %>% 
+  add_predictions(sim1_mod)
+
+ggplot(sim1, aes(x = x)) +
+  geom_point(aes(y = y)) +
+  geom_line(aes(y = pred), data = grid, color = "red", size = 1) +
+  labs(title = "Predictions of Linear Model",
+       caption = "Source: sim1 dataset")
+```
+
+## Visualizing Residuals
+The flip-side of predictions are *residuals*. Predictions tell you the pattern that the model has captured, and the residuals tell you what the model has missed.
+
+1. Add predictions and residuals to original dataset
+
+```{r add-residuals}
+sim1 <- sim1 %>% add_predictions(sim1_mod) %>% add_residuals(sim1_mod)
+knitr::kable(sim1)
+```
+
+## Visualizing Residuals
+1. Add predictions and residuals to original dataset
+2. Plot residuals vs predictions. Hopefully it looks like random noise.
+
+
+```{r plot-residuals}
+sim1 <- sim1 %>% add_predictions(sim1_mod) %>% add_residuals(sim1_mod)
+
+ggplot(sim1, aes(x = pred, y = resid)) +
+  geom_point() +
+  geom_hline(yintercept = 0, color = "blue") + 
+  labs(title = "Residuals of Linear Model",
+       caption = "Source: sim1 dataset")
+```
+
+# Formulas and Model Families
+
+## Formulas to Functions
+We saw in `lm()` that the formula `y ~ x` gets translated to the function $y = a_1 + a_2*x$. Internally R will convert this formula to a *model matrix*.
+
+```{r model-matrix}
+model_matrix(sim1, y ~ x)
+model_matrix(sim1, y ~ x + I(x^2))
+```
+
+## Sim2 Dataset
+```{r sim2}
+sim2 %>% sample_n(6) %>% knitr::kable()
+ggplot(sim2) + 
+  geom_point(aes(x, y)) +
+  labs(caption = "Source: sim2")
+```
+
+## Formulas with Categorical Variables
+If you want to predict a value using categorical variables you can still use formulas. For example, `y ~ sex` translates to the function $y = x_0 + x_1 \cdot \text{sex_male}$
+
+```{r model-categorical}
+model_matrix(sim2 %>% sample_n(10), y ~ x)
+```
+
+## Sim2 Model
+
+```{r sim2-model}
+mod2 <- lm(y ~ x, data = sim2)
+grid <- sim2 %>% 
+  data_grid(x) %>% 
+  add_predictions(mod2)
+
+grid
+
+ggplot(sim2, aes(x = x)) +
+  geom_point(aes(y = y)) +
+  geom_point(data = grid, aes(y = pred), color = "red", size = 4) +
+  labs(title = "Model Prediction Using a Categorical Variable",
+       caption = "Source: sim2")
+```
+
+## Sim3 Dataset
+```{r sim3}
+sim3 %>% sample_n(6) %>% knitr::kable()
+ggplot(sim3) + 
+  geom_point(aes(x1, y, color = x2)) +
+  labs(caption = "Source: sim3")
+```
+
+## Questions
+What does the model matrix look like for the formula `y ~ x1 + x2`?
+```{r question1}
+model_matrix(sim3, y ~ x1 + x2)
+```
+
+## The Interaction Term
+Iteraction terms can be specified with `*`. Ex. `y ~ x1 * x2`.
+
+```{r interaction-term}
+model_matrix(sim3, y ~ x1 * x2)
+```
+
+## Interactions (Continuous and Categorical)
+Let's build a model with indepdendent terms `+` and interaction terms `*`.
+
+```{r interaction-model}
+mod1 <- lm(y ~ x1 + x2, data = sim3)
+mod2 <- lm(y ~ x1 * x2, data = sim3)
+```
+
+## Visualizing Interaction Models
+1. Build the grid
+
+```{r interaction-model-grid}
+grid <- sim3 %>% data_grid(x1, x2)
+grid
+```
+
+## Visualizing Interaction Models
+1. Build the grid with `data_grid()`
+2. Add predictions with `gather_predictions()`
+
+```{r interaction-model-predictions}
+grid <- sim3 %>% 
+  data_grid(x1, x2) %>% 
+  gather_predictions("y ~ x1 + x2" = mod1, "y ~ x1 * x2" = mod2)
+
+grid
+```
+
+## Visualizing Interaction Models
+1. Build the grid with `data_grid()`
+2. Add predictions with `gather_predictions()`
+3. Plot predictions with **ggplot**
+
+```{r interaction-model-plot}
+grid <- sim3 %>% 
+  data_grid(x1, x2) %>% 
+  gather_predictions("y ~ x1 + x2" = mod1, "y ~ x1 * x2" = mod2)
+
+ggplot(sim3, aes(x = x1, y = y, color = x2)) +
+  geom_point() +
+  geom_line(data = grid, aes(y = pred)) +
+  facet_wrap(~model)
+```
+
+```{r interaction-model-facet}
+sim3 <- modelr::sim3 %>% 
+  gather_residuals("y ~ x1 + x2" = mod1, "y ~ x1 * x2" = mod2)
+
+ggplot(sim3, aes(x1, resid, color = x2)) + 
+  geom_point() + 
+  geom_hline(yintercept = 0, linetype = "dashed", color = "gray30") +
+  scale_color_discrete(guide = "none") +
+  facet_grid(model ~ x2) +
+  labs(caption = "Source: sim3")
+```
+
+## Sim4 Dataset
+```{r sim4}
+sim4 %>% sample_n(6) %>% knitr::kable()
+```
+
+## Sim4 Grid
+```{r sim4-grid}
+mod1 <- lm(y ~ x1 + x2, data = sim4)
+mod2 <- lm(y ~ x1 * x2, data = sim4)
+
+grid <- sim4 %>% 
+  data_grid(
+    x1 = seq_range(x1, 5),
+    x2 = seq_range(x2, 5)) %>% 
+  gather_predictions(
+    "y ~ x1 + x2" = mod1,
+    "y ~ x1 * x2" = mod2
+  )
+
+grid
+```
+## Interactions (Continuous and Continuous)
+The models appear to perform similarily ...
+```{r interactions-continuous}
+ggplot(grid, aes(x1, x2)) +
+  geom_tile(aes(fill = pred)) +
+  facet_wrap(~model) +
+  scale_fill_viridis_c() +
+  labs(caption = "Source: sim4")
+```
+
+## Interactions (Continuous and Continuous)
+... but they do have different behaviour.
+```{r interactions-continuous2}
+ggplot(grid, aes(x1, pred, color = x2, group = x2)) +
+  geom_line() +
+  facet_wrap(~ model) +
+  labs(caption = "Source: sim4")
+```
+
+## Transformations
+You can perform transformations inside the model formula. For example, `log(y) ~ sqrt(x1) + x2` is transformed to $\text{log}(y) = a_1 + a_2 \cdot \text{sqrt}(x_1) + a_3 \cdot x_2$.
+
+You can also use functions like `poly()` to fit polynomial functions and `ns()` to fit natural splines.
+
+## Sim5 Dataset
+
+```{r sim5}
+sim5 <- tibble(
+  x = seq(0, 3.5 * pi, length = 50),
+  y = 4 * sin(x) + rnorm(length(x))
+)
+
+ggplot(sim5, aes(x, y)) +
+  geom_point() +
+  labs(caption = "Source: sim5")
+```
+
+```{r sim5-models}
+library(splines)
+mod1 <- lm(y ~ ns(x, 1), data = sim5)
+mod2 <- lm(y ~ ns(x, 2), data = sim5)
+mod3 <- lm(y ~ ns(x, 3), data = sim5)
+mod4 <- lm(y ~ ns(x, 4), data = sim5)
+mod5 <- lm(y ~ ns(x, 5), data = sim5)
+```
+
+## Plots
+```{r sim5-plots}
+grid <- sim5 %>% 
+  data_grid(x = seq_range(x, n = 50, expand = 0.1)) %>% 
+  gather_predictions(
+    "y ~ ns(x,1)" = mod1, 
+    "y ~ ns(x,2)" = mod2, 
+    "y ~ ns(x,3)" = mod3, 
+    "y ~ ns(x,4)" = mod4, 
+    "y ~ ns(x,5)" = mod5, 
+    .pred = "y")
+
+ggplot(sim5, aes(x, y)) + 
+  geom_point() +
+  geom_line(data = grid, colour = "red") +
+  facet_wrap(~ model) +
+  labs(caption = "Source: sim5")
+```
+
+## Popular Modeling Functions in R
+```{r popular-models, echo=FALSE}
+popular_models <- tibble(
+  "function" = c("lm()", "glm()", "gam()", "glmnet", "rlm()", "rpart()", 
+                 "randomForest()", "xgboost()"),
+  "package" = c("stats", "stats", "mgcv", "glmnet", "MASS", "rpart", 
+                "randomForest", "xgboost"),
+  "type" = c("linear models", "generalized linear models", "generalized additive models",
+             "penalized linear models", "robust linear models", "trees", "random forests",
+             "gradient boosting machines")
+)
+
+knitr::kable(popular_models)
+```
+
+## TidyModels
+**tidymodels** is a *meta-package* for modeling and statistical analysis that share the underlying design philosophy, grammar, and data structures of the tidyverse.
+
+```{r tidymodels-logo, echo=FALSE, out.height="80px"}
+knitr::include_graphics("tidymodels_hex.png")
+```
+
+# Conclusion
